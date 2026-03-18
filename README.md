@@ -41,7 +41,6 @@ pip install -r requirements.txt
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
-7. Refine UML so it matches what you actually built.
 
 ---
 
@@ -56,3 +55,13 @@ PawPal+ includes several scheduling enhancements beyond basic priority sorting:
 - **Recurring tasks with auto-spawn** — Tasks with `frequency="daily"` or `frequency="weekly"` automatically generate the next occurrence when completed via `pet.complete_task(name)`. The new task's `due_date` is calculated with Python's `timedelta` (`date.today() + timedelta(days=1)` for daily). The original task is marked complete; the new instance is appended and re-enters the next plan fresh.
 
 - **Conflict detection** — `Scheduler.detect_conflicts()` runs three checks: duplicate task names on the same pet, per-pet time budget overruns, and time-slot overlaps between any two timed tasks. Overlaps are detected with the standard interval intersection test (`start_a < end_b AND start_b < end_a`). Warnings are returned as strings rather than exceptions, keeping the app usable even when issues exist.
+
+## Testing PawPal+
+
+Run the test suite with:
+
+```bash
+python -m pytest
+```
+
+Current tests cover core scheduler reliability: task completion status updates, adding tasks to pets, chronological sorting by `HH:MM`, daily recurrence auto-spawning with tomorrow's due date, and conflict detection for duplicate/overlapping times.
