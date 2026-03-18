@@ -63,13 +63,37 @@ Reviewing the skeleton against the UML revealed three issues that need to be add
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The Scheduler evaluates three constraints in order of importance:
+
+1. **Time budget** (`daily_available_minutes`): the hard outer limit. If a task does not fit in the remaining time it is skipped — no task is ever split.
+2. **Priority** (`high`, `medium`, `low`): determines which tasks claim the budget first. `PRIORITY_RANK` maps each string to a number so tasks sort correctly before the fill loop runs.
+3. **Duration as tie-breaker**: within the same priority tier, shorter tasks go first (shortest-job-first), maximising how many tasks complete in the window.
+
+Time budget is the hardest constraint because over-committing leads to missed tasks. Priority is the primary sort key so health tasks (medication, feeding) are never crowded out by optional enrichment.
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The scheduler uses a **greedy shortest-job-first** strategy rather than finding the mathematically optimal task combination. It may skip a single high-value 45-minute task in favour of fitting three shorter medium-priority tasks, even if the longer task represented more total care value. This is reasonable for pet care because completing more habitual tasks (walks, feeding, brushing) maintains an animal's routine better than fewer but longer sessions. The greedy approach also runs in O(n log n) versus exponential time for a full knapsack solution.
+
+**Algorithm simplification — `_all_eligible_tasks()`**
+
+Reviewing this helper showed a clear readability win. The original built a flat list with a `for`-loop and `.extend()`:
+
+	tasks = []
+	for pet in self.owner.get_pets():
+		tasks.extend(t for t in pet.get_tasks() if t.recurring or not t.completed)
+	return tasks
+
+It was replaced with a nested list comprehension:
+
+	return [
+		t
+		for pet in self.owner.get_pets()
+		for t in pet.get_tasks()
+		if t.recurring or not t.completed
+	]
+
+Both produce identical output. The comprehension removes the intermediate variable and the `.extend()` call, expressing the two-level iteration and filter as one statement. When a loop exists only to build and return a list, a comprehension is usually cleaner.
 
 ---
 
