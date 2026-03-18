@@ -101,13 +101,28 @@ Both produce identical output. The comprehension removes the intermediate variab
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+I used VS Code Copilot as a pair programmer across distinct phases: architecture drafting, implementation, debugging, and test expansion.
+
+Most effective Copilot features for this scheduler were:
+
+1. **Inline completions during class construction** - fast scaffolding for repetitive patterns (dataclass fields, getters, and method signatures).
+2. **Chat-based refactoring support** - useful when converting plain loops to cleaner comprehensions and when reorganizing UI flow around `st.session_state`.
+3. **Targeted test drafting** - high-value initial pytest skeletons for sorting, recurrence, and conflict checks that I then tightened with project-specific assertions.
+4. **Context-aware code navigation** - quickly tracing where methods were consumed (`Scheduler` methods in `app.py`) before wiring UI features.
+
+The most helpful prompts were specific and constraint-based, for example: "Sort by HH:MM chronologically, keep one-time tasks intact, and show conflicts as non-fatal warnings." Prompts that included acceptance criteria (input, expected output, edge case) produced the best results.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+One AI suggestion initially proposed replacing large sections of files with broad patches that introduced formatting artifacts and duplicate lines. I rejected that approach and switched to smaller, targeted edits so I could verify each change in isolation.
+
+I evaluated suggestions by applying three checks:
+
+1. **Behavioral check** - does the change satisfy the requirement (for example, recurrence creates tomorrow's task)?
+2. **Design check** - does it keep class responsibilities clean (`Task` describes recurrence, `Pet` mutates task lists, `Scheduler` plans)?
+3. **Verification check** - run `python -m pytest` and manually run `main.py` for scenario-level confirmation.
+
+If a suggestion passed syntax but violated design boundaries, I modified it instead of accepting it verbatim.
 
 ---
 
@@ -115,13 +130,27 @@ Both produce identical output. The comprehension removes the intermediate variab
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+I tested five core behaviors:
+
+1. `mark_complete()` flips `completed` from `False` to `True`.
+2. Adding a task to a pet increases the task count.
+3. `sort_by_time()` returns tasks in chronological HH:MM order.
+4. Completing a daily task auto-spawns a new instance due the next day.
+5. `detect_conflicts()` flags overlapping/duplicate-time tasks.
+
+These tests are important because they cover the system's reliability pillars: correct state mutation, deterministic ordering, recurrence automation, and safety warnings when a schedule is unrealistic.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+Current confidence is **4/5 stars**. The core scheduling workflow is stable and verified by passing tests, but there is still room to broaden boundary coverage.
+
+Next edge cases to test:
+
+1. Tasks with missing `time_of_day` should sort to the end without errors.
+2. Non-overlapping boundary times (end equals next start) should not be reported as conflicts.
+3. Weekly recurrence should create a task with `due_date = today + 7 days`.
+4. Invalid time formats in UI input should be rejected consistently.
+5. Multi-pet plans with identical task names should remain correctly attributable by pet.
 
 ---
 
@@ -129,12 +158,12 @@ Both produce identical output. The comprehension removes the intermediate variab
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+I am most satisfied with the separation of concerns in the final design: data behavior in `Task`, ownership and mutation in `Pet`, and planning/filtering/conflict logic in `Scheduler`. That structure made it straightforward to extend features without rewriting the whole system.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+In another iteration, I would redesign task timing around true datetime objects (instead of strings) and add a dedicated conflict-resolution assistant that suggests the best alternative time slots automatically.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+The biggest takeaway is that AI is strongest when I stay the lead architect. Copilot can generate quickly, but system quality depends on me setting constraints, reviewing each suggestion, and preserving clean boundaries between classes. Using separate chat sessions for design, implementation, testing, and UI helped me stay organized and avoid mixing strategic decisions with tactical edits.

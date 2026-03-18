@@ -49,9 +49,12 @@ available_minutes = st.number_input("Your available time today (minutes)", min_v
 
 if "owner" not in st.session_state:
     st.session_state.owner = None
+if "scheduler" not in st.session_state:
+    st.session_state.scheduler = None
 
 if st.button("Save owner"):
     st.session_state.owner = Owner(name=owner_name, daily_available_minutes=int(available_minutes))
+    st.session_state.scheduler = None
     st.success(f"Owner '{owner_name}' saved with {available_minutes} min available.")
 
 if st.session_state.owner:
@@ -68,14 +71,16 @@ st.subheader("Step 2 — Add a Pet")
 
 pet_name = st.text_input("Pet name", value="Mochi")
 species = st.selectbox("Species", ["dog", "cat", "other"])
+pet_age = st.number_input("Pet age", min_value=0, max_value=40, value=0)
 
 if st.button("Add pet"):
     if st.session_state.owner is None:
         st.warning("Save an owner first (Step 1).")
     else:
-        pet = Pet(name=pet_name, species=species, age=0)
+        pet = Pet(name=pet_name, species=species, age=int(pet_age))
         # owner.add_pet() stores the pet AND sets pet.owner = self (back-reference).
         st.session_state.owner.add_pet(pet)
+        st.session_state.scheduler = None
         st.success(f"Pet '{pet.name}' added to {st.session_state.owner.name}'s profile.")
 
 # Display registered pets by reading directly from the Owner object.
@@ -106,19 +111,69 @@ if st.session_state.owner and st.session_state.owner.get_pets():
     with col3:
         priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
 
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        category = st.selectbox(
+            "Category",
+            ["walk", "feeding", "medication", "grooming", "enrichment", "general"],
+            index=5,
+        )
+    with col5:
+        time_of_day = st.text_input("Start time (HH:MM)", value="")
+    with col6:
+        frequency = st.selectbox("Frequency", ["one-time", "daily", "weekly"], index=0)
+
+    recurring = frequency in {"daily", "weekly"}
+    frequency_value = "" if frequency == "one-time" else frequency
+
     if st.button("Add task"):
         # Retrieve the actual Pet object from the owner by matching the selected name.
         target_pet = next(p for p in st.session_state.owner.get_pets() if p.name == selected_pet_name)
-        task = Task(name=task_title, duration_minutes=int(duration), priority=priority, category="general")
+
+        if time_of_day:
+            parts = time_of_day.split(":")
+            valid_time = (
+                len(parts) == 2
+                and parts[0].isdigit()
+                and parts[1].isdigit()
+                and 0 <= int(parts[0]) <= 23
+                and 0 <= int(parts[1]) <= 59
+                and len(parts[0]) == 2
+                and len(parts[1]) == 2
+            )
+            if not valid_time:
+                st.warning("Use HH:MM format for time (for example: 08:30).")
+                st.stop()
+
+        task = Task(
+            name=task_title,
+            duration_minutes=int(duration),
+            priority=priority,
+            category=category,
+            time_of_day=time_of_day,
+            frequency=frequency_value,
+            recurring=recurring,
+        )
         # pet.add_task() stores the Task inside the Pet's internal task list.
         target_pet.add_task(task)
+        st.session_state.scheduler = None
         st.success(f"Task '{task_title}' added to {target_pet.name}.")
 
     # Show all tasks across all pets.
     all_rows = []
     for p in st.session_state.owner.get_pets():
         for t in p.get_tasks():
-            all_rows.append({"pet": p.name, "task": t.name, "minutes": t.duration_minutes, "priority": t.priority})
+            all_rows.append(
+                {
+                    "pet": p.name,
+                    "task": t.name,
+                    "minutes": t.duration_minutes,
+                    "priority": t.priority,
+                    "time": t.time_of_day or "(none)",
+                    "frequency": t.frequency or "one-time",
+                    "done": "yes" if t.completed else "no",
+                }
+            )
     if all_rows:
         st.write("All scheduled tasks:")
         st.table(all_rows)
@@ -145,18 +200,90 @@ if st.button("Generate schedule"):
     else:
         scheduler = Scheduler(st.session_state.owner)
         scheduler.generate_plan()
+        st.session_state.scheduler = scheduler
 
-        st.subheader("📋 Today's Schedule")
-        if scheduler.plan:
-            for task in scheduler.plan:
-                st.success(f"**[{task.priority.upper()}]** {task.name} — {task.duration_minutes} min")
-            time_used = sum(t.duration_minutes for t in scheduler.plan)
-            st.info(f"Time used: {time_used} / {st.session_state.owner.daily_available_minutes} min")
-        else:
-            st.warning("No tasks fit within your available time.")
+if st.session_state.scheduler:
+    scheduler = st.session_state.scheduler
 
-        skipped = scheduler.get_unscheduled_tasks()
-        if skipped:
-            st.subheader("⏭️ Skipped (didn't fit)")
-            for task in skipped:
-                st.error(f"{task.name} — {task.duration_minutes} min")
+    st.subheader("📋 Today's Schedule")
+
+    sort_mode = st.radio(
+        "Sort view",
+        ["Priority then duration", "Chronological (HH:MM)"],
+        horizontal=True,
+    )
+    pet_filter = st.selectbox(
+        "Filter by pet",
+        ["All pets"] + [p.name for p in st.session_state.owner.get_pets()],
+    )
+    status_filter = st.selectbox("Filter by status", ["All", "Incomplete", "Completed"])
+
+    display_tasks = list(scheduler.plan)
+
+    if sort_mode == "Chronological (HH:MM)":
+        display_tasks = scheduler.sort_by_time(display_tasks)
+
+    if pet_filter != "All pets":
+        pet_ids = {id(t) for t in scheduler.filter_by_pet(pet_filter)}
+        display_tasks = [t for t in display_tasks if id(t) in pet_ids]
+
+    if status_filter != "All":
+        completed_value = status_filter == "Completed"
+        status_ids = {id(t) for t in scheduler.filter_by_status(completed_value)}
+        display_tasks = [t for t in display_tasks if id(t) in status_ids]
+
+    task_to_pet = {
+        id(task): pet.name
+        for pet in st.session_state.owner.get_pets()
+        for task in pet.get_tasks()
+    }
+
+    if display_tasks:
+        rows = []
+        for task in display_tasks:
+            rows.append(
+                {
+                    "pet": task_to_pet.get(id(task), "unknown"),
+                    "task": task.name,
+                    "priority": task.priority,
+                    "duration": f"{task.duration_minutes} min",
+                    "time": task.time_of_day or "(none)",
+                    "status": "completed" if task.completed else "incomplete",
+                    "frequency": task.frequency or "one-time",
+                }
+            )
+        st.table(rows)
+    else:
+        st.warning("No tasks match the current filters.")
+
+    time_used = sum(t.duration_minutes for t in scheduler.plan)
+    st.success(f"Time used: {time_used} / {st.session_state.owner.daily_available_minutes} min")
+
+    skipped = scheduler.get_unscheduled_tasks()
+    if skipped:
+        st.subheader("⏭️ Skipped (didn't fit)")
+        skipped_rows = [
+            {
+                "task": task.name,
+                "priority": task.priority,
+                "duration": f"{task.duration_minutes} min",
+            }
+            for task in skipped
+        ]
+        st.table(skipped_rows)
+
+    warnings = scheduler.detect_conflicts()
+    if warnings:
+        st.subheader("⚠️ Plan Warnings")
+        st.warning(
+            "Some tasks overlap or exceed practical limits. Review these before starting your day."
+        )
+        st.table([{"warning": w} for w in warnings])
+        with st.expander("How to resolve warnings"):
+            st.markdown(
+                """
+- Move one of the overlapping tasks by 15-30 minutes.
+- Lower duration for optional tasks when your day is full.
+- Keep medication and feeding at high priority so they stay scheduled.
+"""
+            )
